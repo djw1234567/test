@@ -1,0 +1,59 @@
+import json,hashlib,time,random,requests
+def get_ts():
+    ts= int(time.time()*1000)
+    return ts
+def get_bv():
+    appVersion= 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36'
+    m = hashlib.md5()
+    m.update(appVersion.encode('utf-8'))
+    bv =m.hexdigest()
+    return bv
+def get_salt(ts):
+    num = int(random.random() * 10)
+    salt = str(ts) + str(num)
+    return salt
+def get_sign(salt):
+    a = 'fanyideskweb'
+    b = '英俊'
+    c = salt
+    d = 'Nw(nmmbP%A-r6U3EUn]Aj'
+
+    str_data = a+b +str(c)+d
+
+    m = hashlib.md5()
+    m.update(str_data.encode('utf-8'))
+    sign=m.hexdigest()
+    return sign
+def get_form_data():
+    ts = get_ts()
+    salt= get_salt(ts)
+    form_data = {
+        'i': '英俊',
+        'from':'AUTO',
+        'to':'AUTO',
+        'smartresult':'dict',
+        'client':'fanyideskweb',
+        'salt': str(salt),
+        'sign': get_sign(salt),
+        'ts': str(ts),
+        'bv': get_bv(),
+        'doctype':'json',
+        'version':'2.1',
+        'keyfrom':'fanyi.web',
+        'action':'FY_BY_REALTlME',
+    }
+    
+    return form_data
+
+url = 'http://fanyi.youdao.com/translate_o?smartresult=dict&smartresult=rule'
+headers = {
+    'Cookie':'OUTFOX_SEARCH_USER_ID=-380749122@10.169.0.84; OUTFOX_SEARCH_USER_ID_NCOO=184209299.1000691; JSESSIONID=aaaoeDAsCzuf04xmz8jjx; ___rl__test__cookies=1590385515490',
+    'Referer':'http://fanyi.youdao.com/',
+    'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36'
+}
+
+print(get_form_data())
+
+response = requests.post(url,data=get_form_data(),headers=headers)
+dict_result= json.loads(response.content)
+print('翻译结果',dict_result['translateResult'][0][0]['tgt'])
