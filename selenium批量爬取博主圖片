@@ -1,0 +1,163 @@
+import time,re,requests,os
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from datetime import datetime
+
+headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
+#设置请求头，可以换自己浏览器的，也可以多准备一点
+now = str(datetime.now()) #获取当前日期
+
+endtime = now[:10] #提取需要格式的当前日期，这个变量就是后面构建url的搜图结束时间参数
+pagelist = [] #该变量用来处理最大页数，搜索范围内图片多的话需要翻页
+picurllist = [] #该变量用来保存爬到的图片下载url
+
+def typeinfo():
+    global url
+    home = input('请将搜索用户微博主页链接复制此处：')
+    print('开始设置下载起始日期：\n【设置提示：请根据提示输入相应数字，全部输入空格使用最早起始日期，直接回车使用当前年/月/日】')
+    starty = input('输入起始年份：')
+    if starty == '': #如果直接回车，则默认使用当前日期中的年份
+        year = now[:4]
+    else:
+        year = starty #否则使用用户输入的数字，后面同理
+    startm = input('输入起始月份：')
+    if startm == '': #如果直接回车，则默认使用当前日期中的月份
+        month = now[5:7]
+    else:
+        month = startm
+    startd = input('输入起始日期：')
+    if startd == '': #如果直接回车，则默认使用当前日期中的日期
+        day = now[8:10]
+    else:
+        day = startd
+    print(f'选择的搜图起始日期为{year}年{month}月{day}日')
+
+    urlh = re.search(r"https.*\?",home).group() #正则提取字符串
+    urlp = f'is_ori=1&is_pic=1&key_word=&start_time={year}-{month}-{day}&end_time={endtime}&is_search=1&is_searchadv=1#_0'
+    url = urlh+urlp #字符串拼接成我们需要的url
+    print(url)
+
+
+def wbspy():
+    global uname
+
+
+    # selenium启动浏览器，并访问url
+    samaritan = webdriver.Chrome()
+    samaritan.get(url)
+    samaritan.implicitly_wait(10)
+    time.sleep(0.1)
+    # selenium模拟点击登录，使用扫码登录
+    log = samaritan.find_element_by_class_name('gn_login').find_elements_by_class_name('S_txt1')[-1]
+    log.click()
+    time.sleep(1)
+    logpic = samaritan.find_element_by_link_text("安全登录")
+    samaritan.execute_script("arguments[0].click();", logpic)
+    # 等待时间根据网页加载状况而异，最好给充足的时间扫码，扫码以后最好等网页显示扫码成功再点击确认登录
+    time.sleep(30)
+    samaritan.get(url)
+    samaritan.implicitly_wait(10)
+    time.sleep(1)
+    # 模拟滚动液面，至最下方
+    for i in range(5):
+        samaritan.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(0.8)
+    # 加载完毕获取该页面内容，用bs解析
+    time.sleep(0.2)
+    html = samaritan.page_source
+    soup = BeautifulSoup(html, 'html.parser')
+    # 确定本次搜索页面最大数，如果只有一页就设置为1，否则爬取页面最大数字
+    maxp = 1
+    try:  # 尝试爬去页面最下方是否有翻页，有的话可以找到最大页码
+        maxpage = soup.find('div', class_="W_pages").find_all('li')
+        for i in maxpage:
+            page = i.text.strip()
+            p = int(re.search('\d+', page).group().strip())
+            print(p)
+            pagelist.append(p)  # 将所有页码添加进页码列表等待处理
+        maxp = max(pagelist)  # max函数处理列表，得到最大页码数
+    except:
+        pass
+    # 不必翻页情况下，最大页码数默认为1，这里是在检查一次以防出错
+    if maxp > 1:
+        pass
+    else:
+        maxp = 1
+    print(maxp)
+
+    # 根据最大页码写循环，翻页获取每一页的所有图片url
+    for i in range(maxp):
+        piczone = soup.find_all(class_="WB_media_wrap clearfix")
+
+        for pp in piczone:  # 每个带图片的博文内还可能有多张图片
+            try:
+                picblock = pp.find('ul').find_all('img')
+            except:
+                picblock = pp.find('ul').find('img')
+            for p in picblock:
+                try:  # 找到预览图url
+                    pics = p['src']
+                    pic = re.search(r'\d/.*?jpg', pics).group()  # 提取图片url部分
+                    hpic = 'http://wx1.sinaimg.cn/large' + pic[1:].strip()  # 原图url拼接
+                    picurllist.append(hpic)  # 将图片下载链接添加进列表
+                except:
+                    pass
+            # 翻到最后一页时，只需提取url无需再次翻页，所以设置条件打破循环
+        if i == maxp - 1:
+            break
+        # 模拟点击翻页
+        np = samaritan.find_element_by_link_text("下一页")
+        samaritan.execute_script("arguments[0].click();", np)
+        # 模拟滚动页面至最下方
+        for i in range(4):
+            samaritan.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(0.8)
+        time.sleep(0.2)
+        # 加载页面并交给bs解析
+        html = samaritan.page_source
+        soup = BeautifulSoup(html, 'html.parser')
+        '''
+        # 找到博主昵称，提取字符串
+        uname = soup.find(class_="username").text
+        # 重构字符串使它成为路径格式
+        uname = fr'/{uname}'
+        # 自行设置等下需要保存的路径，此处举例为我的桌面
+        '''
+        table = r'home/djw/图片'
+        try:  # 在指定路径下创建文件夹
+            os.mkdir(fr'{table}/picture')
+            print('sucesss')
+        except:  # 如已存在，就忽略
+            #pass
+            print('faild')
+
+    # 爬取任务完成，别忘记关闭浏览器
+    samaritan.close()
+
+
+def download():  # 定义下载方法
+    global count  # 使计数变量全局化，最后还需调用它直观显示下载数
+    print(f'开始下载！\n预计下载{len(picurllist)}张图片！')
+    for dp in range(len(picurllist)):  # 遍历下载列表
+        count = dp + 1  # 设置计数器方便查看
+
+        picdown = requests.get(picurllist[dp], headers=headers).content
+        # requests请求链接，下载图片并content处理二进制文件
+        #picsave = open(fr'/home/djw/图片{uname}{uname}{count}.jpg', 'wb')
+        with open(fr'/home/djw/picture/picture{count}.jpg', 'wb') as f:
+        # 保存图片到之前我们设置的路径，并用博主名+数字序号命名
+            f.write(picdown)
+
+        print(f'第{count}张图片下载完成！')
+
+def main():
+    typeinfo()
+    start = time.time()
+    wbspy()
+    download()
+    end = time.time()
+    #这里要调用count计数变量，所以download方法里用了global使它全局化
+    print(f'下载完成！\n本次用时{end - start}秒!\n总计下载{count}张图片！')
+
+if __name__ == '__main__':
+    main()
